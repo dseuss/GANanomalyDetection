@@ -19,6 +19,7 @@ from glob import glob
 from tensorflow.python.framework import ops
 import imageio
 import cv2
+import skimage.data
 
 #----------------------------------------------------------------------------
 # Convenience.
@@ -433,11 +434,11 @@ class Network:
 		module, self._build_func_name = import_module(func)
 		self._build_module_src = inspect.getsource(module)
 		self._build_func = find_obj_in_module(module, self._build_func_name)
-		
+
 		# Init graph.
 		self._init_graph()
 		if not (self.name == 'G_anomaly' or 'D_anomaly' in self.name):
-			self.reset_vars()	
+			self.reset_vars()
 
 	def _init_fields(self):
 		self.name               = None          # User-specified name, defaults to build func name if None.
@@ -459,7 +460,7 @@ class Network:
 		self._build_func_name   = None          # Name of the build function.
 		self._build_module_src  = None          # Full source code of the module containing the build function.
 		self._run_cache         = dict()        # Cached graph data for Network.run().
-        
+
 	def _init_graph(self):
 		# Collect inputs.
 		self.input_names = []
@@ -473,14 +474,14 @@ class Network:
 		if self.name is None:
 			self.name = self._build_func_name
 		self.scope = tf.get_default_graph().unique_name(self.name.replace('/', '_'), mark_as_used=False)
-		
+
 		# Build template graph.
 		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE) as scope:
 			assert tf.get_variable_scope().name == self.scope
 			with absolute_name_scope(self.scope): # ignore surrounding name_scope
 				with tf.control_dependencies(None): # ignore surrounding control_dependencies
 					if self.name == 'G_anomaly':
-						self.ano_z = tf.get_variable('ano_z', shape = [8, 512], dtype = tf.float32, 
+						self.ano_z = tf.get_variable('ano_z', shape = [8, 512], dtype = tf.float32,
 							initializer = tf.random_uniform_initializer(minval=-1, maxval=1, dtype=tf.float32))
 						self.input_templates = [self.ano_z]
 						out_expr = self._build_func(*self.input_templates, is_template_graph=True, **self.static_kwargs)
@@ -491,15 +492,15 @@ class Network:
 						else:
 							self.input_templates = [tf.placeholder(tf.float32, name=name) for name in self.input_names]
 						out_expr = self._build_func(*self.input_templates, is_template_graph=True, **self.static_kwargs)
-		
-		
+
+
 		# Collect outputs.
 		assert is_tf_expression(out_expr) or isinstance(out_expr, tuple)
 		self.output_templates = [out_expr] if is_tf_expression(out_expr) else list(out_expr)
 		self.output_names = [t.name.split('/')[-1].split(':')[0] for t in self.output_templates]
 		self.num_outputs = len(self.output_templates)
 		assert self.num_outputs >= 1
-		
+
 		# Populate remaining fields.
 		self.input_shapes   = [shape_to_list(t.shape) for t in self.input_templates]
 		self.output_shapes  = [shape_to_list(t.shape) for t in self.output_templates]
@@ -507,8 +508,8 @@ class Network:
 		self.output_shape   = self.output_shapes[0]
 		self.vars           = OrderedDict([(self.get_var_localname(var), var) for var in tf.global_variables(self.scope + '/')])
 		self.trainables     = OrderedDict([(self.get_var_localname(var), var) for var in tf.trainable_variables(self.scope + '/')])
-	
-	
+
+
     # Run initializers for all variables defined by this network.
 	def reset_vars(self):
 		run([var.initializer for var in self.vars.values()])
@@ -556,7 +557,7 @@ class Network:
     # Note: This method is very inefficient -- prefer to use tfutil.run(list_of_vars) whenever possible.
 	def get_var(self, var_or_localname):
 		return self.find_var(var_or_localname).eval()
-        
+
     # Set the value of a given variable based on the given NumPy array.
     # Note: This method is very inefficient -- prefer to use tfutil.set_vars() whenever possible.
 	def set_var(self, var_or_localname, new_value):
@@ -586,13 +587,13 @@ class Network:
 		self.static_kwargs = state['static_kwargs']
 		self._build_module_src = state['build_module_src']
 		self._build_func_name = state['build_func_name']
-		
+
 		# Parse imported module.
 		module = imp.new_module('_tfutil_network_import_module_%d' % len(_network_import_modules))
 		exec(self._build_module_src, module.__dict__)
 		self._build_func = find_obj_in_module(module, self._build_func_name)
 		_network_import_modules.append(module) # avoid gc
-		
+
 		# Init graph.
 		self._init_graph()
 		self.reset_vars()
@@ -618,7 +619,7 @@ class Network:
 		name_to_value = {}
 		for name in self.vars.keys():
 			if src_net.find_var(name,extra_scope):
-				name_to_value[name] = run(src_net.find_var(name,extra_scope))	
+				name_to_value[name] = run(src_net.find_var(name,extra_scope))
 		#name_to_value = run({name: src_net.find_var(name) for name in self.vars.keys()})
 		set_vars({self.find_var(name): value for name, value in name_to_value.items()})
 
@@ -716,7 +717,7 @@ class Network:
 		layers = []
 
 		def recurse(scope, parent_ops, level):
-			prefix = scope + '/'	
+			prefix = scope + '/'
 			ops = [op for op in parent_ops if op.name == scope or op.name.startswith(prefix)]
 
 			# Does not contain leaf nodes => expand immediate children.
@@ -736,21 +737,21 @@ class Network:
 				layer_output = ops[-1].outputs[0]
 				layer_trainables = [op.outputs[0] for op in ops if op.type.startswith('Variable') and self.get_var_localname(op.name) in self.trainables]
 				layers.append((layer_name, layer_output, layer_trainables))
-		
+
 		if self.scope=='GD_anomaly':
 			recurse(self.scope+'/G', all_ops, 0)
 			recurse(self.scope+'/D', all_ops, 0)
 		else:
 			recurse(self.scope, all_ops, 0)
 		return layers
-	
+
 	def get_layer_by_name(self, name):
 		all_layers = self.list_layers()
 		for layer in all_layers:
 			if layer[0] == name:
 				return layer[1]
 		return None
-	
+
     # Print a summary table of the network structure.
 	def print_layers(self, title=None, hide_layers_with_no_params=False):
 		if title is None: title = self.name
@@ -800,28 +801,28 @@ class AnomalyDetectorEncoder(object):
 		self.Da_test = Da_test
 		self.test_data_folder = test_data_folder
 		self.ano_para = ano_para
-		
+
 		if(Ga.output_shapes[0][1] == 1):
 			self.grayscale = True
 		else:
 			self.grayscale = False
-		
+
 		self.name = 'AnomalyDetectorEncoder'
 		self.scope = tf.get_default_graph().unique_name(self.name.replace('/', '_'), mark_as_used=False)
-		
+
 		self.get_test_data(test_data_folder)
-		
+
 		self.test_result_dir = "test_result"
-		
+
 		image_dims = [Ga.output_shapes[0][1], Ga.output_shapes[0][2], Ga.output_shapes[0][3]]
 
 
 	def find_closest_match(self, test_data, test_data_name, test_batch_size=8):
 		print ("Filename: ", test_data_name, "Detecting anomalies")
-		
+
 		test_data_tensor = tf.convert_to_tensor(np.array(test_data))
 		#latents_out_n, latents_out_c = self.Ea.get_output_for(test_data_tensor, is_training=False)
-		#latents=tf.concat([latents_out_n,latents_out_c],1) 
+		#latents=tf.concat([latents_out_n,latents_out_c],1)
 		print(test_data_tensor)
 		latents = self.Ea.get_output_for(test_data_tensor, is_training=False)#TODO FIXA SNYGGARE!!!!
 		closest_matches = self.Ga.get_output_for(latents, is_training=False)
@@ -832,19 +833,20 @@ class AnomalyDetectorEncoder(object):
 
 		dis_loss = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(tf.abs(tf.subtract(dis_f_z, dis_f_input)),1),1),1)
 		ano_score = (1. - self.ano_para)* res_loss + self.ano_para* dis_loss
-		
-		sess = tf.get_default_session() 
+
+		sess = tf.get_default_session()
 		samples = sess.run(closest_matches)
 		errors = np.absolute(samples-test_data)-1
-		
+
 		samples = np.squeeze(samples)
 		samples = (np.array(samples)+1)*127.5
-		
+
 		errors = np.squeeze(errors)
 		if not self.grayscale:
 			errors = np.mean(errors,axis=0)
 			np.expand_dims(errors, axis=0)
 		errors = (np.array(errors)+1)*127.5
+		return
 
 		for i in range(samples.shape[0]):
 			if len(samples.shape) == 3:
@@ -855,37 +857,37 @@ class AnomalyDetectorEncoder(object):
 			if len(samples.shape) == 4:
 				i_sample = samples[i,:,:,:]
 				i_error = errors[1,:,:]
-			
+
 			_path = self.test_data_folder
 			path = os.path.join(_path, self.test_result_dir)
 			if not os.path.isdir(path):
 			  os.mkdir(path)
-			filename = ['AD_'+test_data_name[i].split("\\")[-1], 
+			filename = ['AD_'+test_data_name[i].split("\\")[-1],
 						'AD_error_'+str(sess.run(ano_score)[i])+'_'+str(sess.run(res_loss)[i])+'_'+test_data_name[i].split("\\")[-1],
 						'AD_anomaly_'+test_data_name[i].split("\\")[-1],
 						'AD_detections_'+test_data_name[i].split("\\")[-1],
 						'AD_z_'+test_data_name[i].split("\\")[-1]]
 			i_sample = i_sample.transpose(1, 2, 0)
-			
+
 			if i_sample.shape[2] == 3:
 				cv2.imwrite(os.path.join(path,filename[0]),cv2.cvtColor(i_sample, cv2.COLOR_RGB2BGR))
 			else:
 				cv2.imwrite(os.path.join(path,filename[0]),i_sample)
 			cv2.imwrite(os.path.join(path,filename[1]),i_error)
 			np.save(os.path.join(path,filename[4]),sess.run(latents)[i,:])
-			
 
-			
+
+
 	def imread(self, path, grayscale = False):
 		if (grayscale):
-			return scipy.misc.imread(path, flatten = True).astype(np.float)
+			return skimage.data.imread(path, flatten = True).astype(np.float)
 		else:
-			return scipy.misc.imread(path).astype(np.float)
-	
+			return skimage.data.imread(path).astype(np.float)
+
 	def get_test_data(self, folder):
 		self.test_data_names = glob(folder+'/*.png*')
 		batch = [self.imread(name, self.grayscale) for name in self.test_data_names]
-		
+
 		if self.grayscale:
 			batch_images = np.array(batch).astype(np.float32)[:,:,:,None]
 		else:
@@ -894,7 +896,7 @@ class AnomalyDetectorEncoder(object):
 		batch_images_t = [img.transpose(2, 0, 1) for img in batch_images]
 		batch_images_t = [img-127.5 for img in batch_images_t]
 		batch_images_t = [img/127.5 for img in batch_images_t]
-		
+
 		#print np.shape(batch_images)
 		self.test_data = batch_images_t
 		print ("[*] test data for anomaly detection is loaded")

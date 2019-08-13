@@ -20,6 +20,7 @@ import cv2
 
 import tfutil
 import dataset
+from typing import Sequence
 
 #----------------------------------------------------------------------------
 
@@ -45,7 +46,7 @@ class TFRecordExporter:
 		if not os.path.isdir(self.tfrecord_dir):
 			os.makedirs(self.tfrecord_dir)
 		assert(os.path.isdir(self.tfrecord_dir))
-        
+
 	def close(self):
 		if self.print_progress:
 			print('%-40s\r' % 'Flushing data...', end='', flush=True)
@@ -92,10 +93,10 @@ class TFRecordExporter:
 		assert labels.shape[0] == self.cur_images
 		with open(self.tfr_prefix + '-rxx.labels', 'wb') as f:
 			np.save(f, labels.astype(np.float32))
-            
+
 	def __enter__(self):
 		return self
-    
+
 	def __exit__(self, *args):
 		self.close()
 
@@ -168,7 +169,7 @@ class ThreadPool(object):
 
         def task_func(prepared, idx):
             return process_func(prepared)
-           
+
         def retire_result():
             processed, (prepared, idx) = self.get_result(task_func)
             results[idx] = processed
@@ -176,7 +177,7 @@ class ThreadPool(object):
                 yield post_func(results[retire_idx[0]])
                 results[retire_idx[0]] = None
                 retire_idx[0] += 1
-    
+
         for idx, item in enumerate(item_iterator):
             prepared = pre_func(item)
             results.append(None)
@@ -193,7 +194,7 @@ def display(tfrecord_dir):
     tfutil.init_tf({'gpu_options.allow_growth': True})
     dset = dataset.TFRecordDataset(tfrecord_dir, max_label_size='full', repeat=False, shuffle_mb=0)
     tfutil.init_uninited_vars()
-    
+
     idx = 0
     while True:
         try:
@@ -219,7 +220,7 @@ def extract(tfrecord_dir, output_dir):
     tfutil.init_tf({'gpu_options.allow_growth': True})
     dset = dataset.TFRecordDataset(tfrecord_dir, max_label_size=0, repeat=False, shuffle_mb=0)
     tfutil.init_uninited_vars()
-    
+
     print('Extracting images to "%s"' % output_dir)
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
@@ -249,7 +250,7 @@ def compare(tfrecord_dir_a, tfrecord_dir_b, ignore_labels):
     print('Loading dataset "%s"' % tfrecord_dir_b)
     dset_b = dataset.TFRecordDataset(tfrecord_dir_b, max_label_size=max_label_size, repeat=False, shuffle_mb=0)
     tfutil.init_uninited_vars()
-    
+
     print('Comparing datasets')
     idx = 0
     identical_images = 0
@@ -299,13 +300,13 @@ def create_mnist(tfrecord_dir, mnist_dir):
     assert np.min(labels) == 0 and np.max(labels) == 9
     onehot = np.zeros((labels.size, np.max(labels) + 1), dtype=np.float32)
     onehot[np.arange(labels.size), labels] = 1.0
-    
+
     with TFRecordExporter(tfrecord_dir, images.shape[0]) as tfr:
         order = tfr.choose_shuffled_order()
         for idx in range(order.size):
             tfr.add_image(images[order[idx]])
         tfr.add_labels(onehot[order])
-		
+
 
 #----------------------------------------------------------------------------
 
@@ -324,24 +325,24 @@ def create_mnist_anomaly_detection(tfrecord_dir, mnist_dir, percentage, id):
 	assert np.min(labels) == 0 and np.max(labels) == 9
 	onehot = np.zeros((labels.size, np.max(labels) + 1), dtype=np.float32)
 	onehot[np.arange(labels.size), labels] = 1.0
-    
+
 	I_normal = [i for i, x in enumerate(labels) if x == int(id)] #"normal samples"
 	I_anomaly = [i for i, x in enumerate(labels) if x != int(id)] #"anomalous images"
 	random.shuffle(I_anomaly)
-	
+
 	n_anomalies = int(float(percentage)*len(I_normal)/(1-float(percentage)))#Will yield 1% anomalies in dataset
 	max_images = len(I_normal) + n_anomalies
-	
+
 	I = I_normal+I_anomaly[0:n_anomalies]
-		
+
 	with TFRecordExporter(tfrecord_dir, len(I)) as tfr:
 		order = tfr.choose_shuffled_order()
 		for idx in range(order.size):
 			tfr.add_image(images[I[order[idx]]])
-	
+
 	print('Done with tfrecords!')
 	print('Exporting validation images!')
-	
+
 	print('Loading MNIST from "%s"' % mnist_dir)
 	with gzip.open(os.path.join(mnist_dir, 't10k-images-idx3-ubyte.gz'), 'rb') as file:
 		images = np.frombuffer(file.read(), np.uint8, offset=16)
@@ -353,14 +354,14 @@ def create_mnist_anomaly_detection(tfrecord_dir, mnist_dir, percentage, id):
 	assert labels.shape == (10000,) and labels.dtype == np.uint8
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
-	
+
 	I_normal = [i for i, x in enumerate(labels) if x == int(id)] #"normal samples"
 	I_anomaly = [i for i, x in enumerate(labels) if x != int(id)] #"anomalous images"
-	
+
 	os.mkdir(os.path.join(tfrecord_dir,'validation'))
 	os.mkdir(os.path.join(tfrecord_dir,'validation','junk'))
 	os.mkdir(os.path.join(tfrecord_dir,'validation','cell'))
-	
+
 	for i,ii in enumerate(I_normal):
 		filename = str(i)+'.png'
 		while len(filename) < 10:
@@ -372,10 +373,10 @@ def create_mnist_anomaly_detection(tfrecord_dir, mnist_dir, percentage, id):
 		while len(filename) < 10:
 			filename = '0' + filename
 		cv2.imwrite(os.path.join(tfrecord_dir,'validation','junk',filename),images[ii,0,:,:])
-	
+
 	print('Done with validation samples!')
 	print('Exporting training samples!')
-	
+
 	print('Loading MNIST from "%s"' % mnist_dir)
 	import gzip
 	with gzip.open(os.path.join(mnist_dir, 'train-images-idx3-ubyte.gz'), 'rb') as file:
@@ -388,17 +389,17 @@ def create_mnist_anomaly_detection(tfrecord_dir, mnist_dir, percentage, id):
 	assert labels.shape == (60000,) and labels.dtype == np.uint8
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
-	
+
 	os.mkdir(os.path.join(tfrecord_dir,'train'))
-	
+
 	I_normal = [i for i, x in enumerate(labels) if x == int(id)] #"normal samples"
 	I_anomaly = [i for i, x in enumerate(labels) if x != int(id)] #"anomalous images"
-	
+
 	random.shuffle(I_anomaly)
-	
+
 	n_anomalies = int(float(percentage)*len(I_normal)/(1-float(percentage)))#Will yield 1% anomalies in dataset
 	max_images = len(I_normal) + n_anomalies
-	
+
 	if n_anomalies == 0:
 		I = I_normal
 	else:
@@ -409,9 +410,9 @@ def create_mnist_anomaly_detection(tfrecord_dir, mnist_dir, percentage, id):
 		while len(filename) < 10:
 			filename = '0' + filename
 		cv2.imwrite(os.path.join(tfrecord_dir,'train',filename),images[ii,0,:,:])
-	
+
 	print('Done!')
-			
+
 #----------------------------------------------------------------------------
 
 def export_mnist_anomaly_detection_validation_samples(destination_dir, mnist_dir):
@@ -427,10 +428,10 @@ def export_mnist_anomaly_detection_validation_samples(destination_dir, mnist_dir
 	assert labels.shape == (10000,) and labels.dtype == np.uint8
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
-	
+
 	I_normal = [i for i, x in enumerate(labels) if x == 8] #"normal samples"
 	I_anomaly = [i for i, x in enumerate(labels) if x != 8] #"anomalous images"
-	
+
 	for i,ii in enumerate(I_normal):
 		filename = str(i)+'.png'
 		while len(filename) < 10:
@@ -442,7 +443,7 @@ def export_mnist_anomaly_detection_validation_samples(destination_dir, mnist_dir
 		while len(filename) < 10:
 			filename = '0' + filename
 		cv2.imwrite(os.path.join(destination_dir,'anomaly',filename),images[ii,0,:,:])
-	
+
 	print('Done!')
 
 def export_mnist_anomaly_detection_training_samples(destination_dir, mnist_dir,percentage):
@@ -458,15 +459,15 @@ def export_mnist_anomaly_detection_training_samples(destination_dir, mnist_dir,p
 	assert labels.shape == (60000,) and labels.dtype == np.uint8
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
-	
+
 	I_normal = [i for i, x in enumerate(labels) if x == 8] #"normal samples"
 	I_anomaly = [i for i, x in enumerate(labels) if x != 8] #"anomalous images"
-	
+
 	random.shuffle(I_anomaly)
-	
+
 	n_anomalies = int(float(percentage)*len(I_normal)/(1-float(percentage)))#Will yield 1% anomalies in dataset
 	max_images = len(I_normal) + n_anomalies
-	
+
 	if n_anomalies == 0.0:
 		I = I_normal
 	else:
@@ -477,7 +478,7 @@ def export_mnist_anomaly_detection_training_samples(destination_dir, mnist_dir,p
 		while len(filename) < 10:
 			filename = '0' + filename
 		cv2.imwrite(os.path.join(destination_dir,filename),images[ii,0,:,:])
-	
+
 	print('Done!')
 
 #----------------------------------------------------------------------------
@@ -491,7 +492,7 @@ def create_mnistrgb(tfrecord_dir, mnist_dir, num_images=1000000, random_seed=123
     images = np.pad(images, [(0,0), (2,2), (2,2)], 'constant', constant_values=0)
     assert images.shape == (60000, 32, 32) and images.dtype == np.uint8
     assert np.min(images) == 0 and np.max(images) == 255
-    
+
     with TFRecordExporter(tfrecord_dir, num_images) as tfr:
         rnd = np.random.RandomState(random_seed)
         for idx in range(num_images):
@@ -515,13 +516,13 @@ def create_cifar10(tfrecord_dir, cifar10_dir,percentage):
 	assert labels.shape == (50000,) and labels.dtype == np.int32
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
-		
+
 	with TFRecordExporter(tfrecord_dir, len(I_normal)+n_anomalies) as tfr:
 		order = tfr.choose_shuffled_order()
 		for idx in range(order.size):
 			tfr.add_image(images[I[order[idx]]])
 		tfr.add_labels(onehot[order])
-	
+
 #----------------------------------------------------------------------------
 
 def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, percentage):
@@ -538,15 +539,17 @@ def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, p
 	images = np.concatenate(images)
 	labels = np.concatenate(labels)
 	assert images.shape == (50000, 3, 32, 32) and images.dtype == np.uint8
-	assert labels.shape == (50000,) and labels.dtype == np.int32
+	assert labels.shape == (50000,)
+	labels = labels.astype(np.int32)
+
 	assert np.min(images) == 0 and np.max(images) == 255
 	assert np.min(labels) == 0 and np.max(labels) == 9
 
-	#I_normal = [i for i, x in enumerate(labels) if x == int(anomaly_class)] #"normal samples"
-	#I_anomaly = [i for i, x in enumerate(labels) if x != int(anomaly_class)] #"anomalous images"
-	I_normal = [i for i, x in enumerate(labels) if np.sum(x == [2,3,4,5,6,7]) == 0] #"normal samples, animals"
-	I_anomaly = [i for i, x in enumerate(labels) if np.sum(x == [2,3,4,5,6,7]) > 0] #"anomalous images, vehicles"
-	
+	if not isinstance(anomaly_class, Sequence):
+		anomaly_class = [int(anomaly_class)]
+
+	I_normal = [i for i, x in enumerate(labels) if not np.isin(x, anomaly_class)] #"normal samples, animals"
+	I_anomaly = [i for i, x in enumerate(labels) if np.isin(x, anomaly_class)] #"anomalous images, vehicles"
 
 	random.shuffle(I_anomaly)
 
@@ -557,10 +560,10 @@ def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, p
 		order = tfr.choose_shuffled_order()
 		for idx in range(order.size):
 			#im_rgb = images[I[order[idx]]];
-			#im_gray = 0.2989*im_rgb[0,:,:] + 0.5870*im_rgb[1,:,:] + 0.1140*im_rgb[2,:,:] 
+			#im_gray = 0.2989*im_rgb[0,:,:] + 0.5870*im_rgb[1,:,:] + 0.1140*im_rgb[2,:,:]
 			#tfr.add_image(np.expand_dims(im_gray,0))
 			tfr.add_image(images[I[order[idx]]])
-	
+
 	print('Exporting training images')
 	os.mkdir(os.path.join(tfrecord_dir,"train"))
 	for i,ii in enumerate(I):
@@ -571,7 +574,7 @@ def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, p
 		#im_rgb = images[ii,:,:,:];
 		#im_gray = 0.2989*im_rgb[0,:,:] + 0.5870*im_rgb[1,:,:] + 0.1140*im_rgb[2,:,:];
 		#cv2.imwrite(os.path.join(tfrecord_dir,"train",filename),im_gray)
-		
+
 	#Export validation data as well
 	print('Exporting evaluation data')
 	with open(os.path.join(cifar10_dir, 'test_batch'), 'rb') as file:
@@ -579,27 +582,25 @@ def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, p
 		test_images=data['data'].reshape(-1, 3, 32, 32)
 		test_labels=data['labels']
 
-	#I_normal = [i for i, x in enumerate(test_labels) if x == int(anomaly_class)] #"normal samples"
-	#I_anomaly = [i for i, x in enumerate(test_labels) if x != int(anomaly_class)] #"anomalous images"
-	I_normal = [i for i, x in enumerate(test_labels) if not np.isin(x,[2,3,4,5,6,7])] #"normal samples, animals"
-	I_anomaly = [i for i, x in enumerate(test_labels) if np.isin(x, [2,3,4,5,6,7])] #"anomalous images, vehicles"
-	
+	I_normal = [i for i, x in enumerate(test_labels) if not np.isin(x, anomaly_class)] #"normal samples, animals"
+	I_anomaly = [i for i, x in enumerate(test_labels) if np.isin(x, anomaly_class)] #"anomalous images, vehicles"
+
 	random.shuffle(I_anomaly)
 	I_anomaly = I_anomaly[0:1000]
 	random.shuffle(I_normal)
 	I_normal = I_normal[0:1000]
 	os.mkdir(os.path.join(tfrecord_dir,"validation"))
-	os.mkdir(os.path.join(tfrecord_dir,"validation","cell"))
+	os.mkdir(os.path.join(tfrecord_dir,"validation","normal"))
 	for i,ii in enumerate(I_normal):
 		filename = str(i)+'.png'
 		while len(filename) < 10:
 			filename = '0' + filename
-		cv2.imwrite(os.path.join(tfrecord_dir,"validation","cell",filename), cv2.cvtColor(np.moveaxis(test_images[ii,:,:,:],0,-1),cv2.COLOR_RGB2BGR))
+		cv2.imwrite(os.path.join(tfrecord_dir,"validation","normal",filename), cv2.cvtColor(np.moveaxis(test_images[ii,:,:,:],0,-1),cv2.COLOR_RGB2BGR))
 		#im_rgb = test_images[ii,:,:,:];
 		#im_gray = 0.2989*im_rgb[0,:,:] + 0.5870*im_rgb[1,:,:] + 0.1140*im_rgb[2,:,:];
 		#cv2.imwrite(os.path.join(tfrecord_dir,"validation","cell",filename),im_gray)
-		
-	os.mkdir(os.path.join(tfrecord_dir,"validation","junk"))
+
+	os.mkdir(os.path.join(tfrecord_dir,"validation","anomaly"))
 	for i,ii in enumerate(I_anomaly):
 		filename = str(i)+'.png'
 		while len(filename) < 10:
@@ -607,8 +608,8 @@ def create_cifar10_anomaly_detection(tfrecord_dir, cifar10_dir, anomaly_class, p
 		#im_rgb = test_images[ii,:,:,:];
 		#im_gray = 0.2989*im_rgb[0,:,:] + 0.5870*im_rgb[1,:,:] + 0.1140*im_rgb[2,:,:];
 		#cv2.imwrite(os.path.join(tfrecord_dir,"validation","junk",filename),im_gray)
-		cv2.imwrite(os.path.join(tfrecord_dir,"validation","junk",filename),cv2.cvtColor(np.moveaxis(test_images[ii,:,:,:],0,-1),cv2.COLOR_RGB2BGR))
-		
+		cv2.imwrite(os.path.join(tfrecord_dir,"validation","anomaly",filename),cv2.cvtColor(np.moveaxis(test_images[ii,:,:,:],0,-1),cv2.COLOR_RGB2BGR))
+
 #----------------------------------------------------------------------------
 
 def create_cifar100(tfrecord_dir, cifar100_dir):
@@ -690,7 +691,7 @@ def create_lsun(tfrecord_dir, lmdb_dir, resolution=256, max_images=None):
                     print(sys.exc_info()[1])
                 if tfr.cur_images == max_images:
                     break
-					
+
 #----------------------------------------------------------------------------
 
 def create_lsun_anomaly_detection(tfrecord_dir, lsun_dir, resolution=256, max_images=None):
@@ -699,17 +700,17 @@ def create_lsun_anomaly_detection(tfrecord_dir, lsun_dir, resolution=256, max_im
 	import io
 	use_these_classes_for_training = ["bedroom"]#["classroom","conference_room","restaurant"]
 	use_these_classes_for_validation = ["classroom", "conference_room","restaurant", "living_room"]
-	
+
 	total_images = 0
 	for lsun_class in use_these_classes_for_training:
 		lmdb_dir = os.path.join(lsun_dir,lsun_class + '_train_lmdb');
 		with lmdb.open(lmdb_dir, readonly=True).begin(write=False) as txn:
 			total_images = total_images + txn.stat()['entries']
 			print('Total number of images "%f"' % total_images)
-			
+
 	if max_images is None:
 		max_images = total_images
-				
+
 	#os.mkdir(os.path.join(tfrecord_dir,"train"))
 	i=0;
 	with TFRecordExporter(tfrecord_dir, max_images) as tfr:
@@ -775,7 +776,7 @@ def create_lsun_anomaly_detection(tfrecord_dir, lsun_dir, resolution=256, max_im
 #					print(sys.exc_info()[1])
 #				#if idx >= 1000:
 #				#	break
-#					
+#
 #	os.mkdir(os.path.join(tfrecord_dir,"validation","junk"))
 #	i=0
 #	for lsun_class in use_these_classes_for_validation:
@@ -806,7 +807,7 @@ def create_lsun_anomaly_detection(tfrecord_dir, lsun_dir, resolution=256, max_im
 #					print(sys.exc_info()[1])
 #				if idx >= 300/len(use_these_classes_for_validation):
 #					break
- #       
+ #
 #----------------------------------------------------------------------------
 
 def create_celeba(tfrecord_dir, celeba_dir, cx=89, cy=121):
@@ -816,7 +817,7 @@ def create_celeba(tfrecord_dir, celeba_dir, cx=89, cy=121):
     expected_images = 202599
     if len(image_filenames) != expected_images:
         error('Expected to find %d images' % expected_images)
-    
+
     with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
         order = tfr.choose_shuffled_order()
         for idx in range(order.size):
@@ -836,7 +837,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
     with open(os.path.join(celeba_dir, 'Anno', 'list_landmarks_celeba.txt'), 'rt') as file:
         landmarks = [[float(value) for value in line.split()[1:]] for line in file.readlines()[2:]]
         landmarks = np.float32(landmarks).reshape(-1, 5, 2)
-    
+
     print('Loading CelebA-HQ deltas from "%s"' % delta_dir)
     import scipy.ndimage
     import hashlib
@@ -861,7 +862,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
     # Must use pillow version 3.1.1 for everything to work correctly.
     if getattr(PIL, 'PILLOW_VERSION', '') != '3.1.1':
         error('create_celebahq requires pillow version 3.1.1') # conda install pillow=3.1.1
-        
+
     # Must use libjpeg version 8d for everything to work correctly.
     img = np.array(PIL.Image.open(os.path.join(celeba_dir, 'img_celeba', '000001.jpg')))
     md5 = hashlib.md5()
@@ -930,23 +931,23 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
             img += (np.median(img, axis=(0,1)) - img) * np.clip(mask, 0.0, 1.0)
             img = PIL.Image.fromarray(np.uint8(np.clip(np.round(img), 0, 255)), 'RGB')
             quad += pad[0:2]
-            
+
         # Transform.
         img = img.transform((4096, 4096), PIL.Image.QUAD, (quad + 0.5).flatten(), PIL.Image.BILINEAR)
         img = img.resize((1024, 1024), PIL.Image.ANTIALIAS)
         img = np.asarray(img).transpose(2, 0, 1)
-        
+
         # Verify MD5.
         md5 = hashlib.md5()
         md5.update(img.tobytes())
         assert md5.hexdigest() == fields['proc_md5'][idx]
-        
+
         # Load delta image and original JPG.
         with zipfile.ZipFile(os.path.join(delta_dir, 'deltas%05d.zip' % (idx - idx % 1000)), 'r') as zip:
             delta_bytes = zip.read('delta%05d.dat' % idx)
         with open(orig_path, 'rb') as file:
             orig_bytes = file.read()
-        
+
         # Decrypt delta image, using original JPG data as decryption key.
         algorithm = cryptography.hazmat.primitives.hashes.SHA256()
         backend = cryptography.hazmat.backends.default_backend()
@@ -954,10 +955,10 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
         kdf = cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC(algorithm=algorithm, length=32, salt=salt, iterations=100000, backend=backend)
         key = base64.urlsafe_b64encode(kdf.derive(orig_bytes))
         delta = np.frombuffer(bz2.decompress(cryptography.fernet.Fernet(key).decrypt(delta_bytes)), dtype=np.uint8).reshape(3, 1024, 1024)
-        
+
         # Apply delta image.
         img = img + delta
-        
+
         # Verify MD5.
         md5 = hashlib.md5()
         md5.update(img.tobytes())
@@ -978,11 +979,11 @@ def create_from_images(tfrecord_dir, image_dir, shuffle):
 	image_filenames = sorted(glob.glob(os.path.join(image_dir, '*.png')))
 	if len(image_filenames) == 0:
 		error('No input images found')
-		
+
 	img = np.asarray(PIL.Image.open(image_filenames[0]))
 	resolution = img.shape[0]
 	channels = img.shape[2] if img.ndim == 3 else 1
-	
+
 	if img.shape[1] != resolution:
 		error('Input images must have the same width and height')
 	if resolution != 2 ** int(np.floor(np.log2(resolution))):
@@ -1007,11 +1008,11 @@ def create_from_images_cellvideos(tfrecord_dir, image_dir, shuffle):
 	image_filenames = sorted(glob.glob(os.path.join(image_dir, '*.png')))
 	if len(image_filenames) == 0:
 		error('No input images found')
-		
+
 	img = np.asarray(PIL.Image.open(image_filenames[0]))
 	resolution = img.shape[0]
 	channels = img.shape[2] if img.ndim == 3 else 1
-	
+
 	if img.shape[1] != resolution:
 		error('Input images must have the same width and height')
 	if resolution != 2 ** int(np.floor(np.log2(resolution))):
@@ -1023,7 +1024,7 @@ def create_from_images_cellvideos(tfrecord_dir, image_dir, shuffle):
 		order = tfr.choose_shuffled_order() if shuffle else np.arange(len(image_filenames))
 		for idx in range(order.size):
 			img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
-			
+
 			#--------
 			if img.shape[0] == 65:
 				img = img[1:img.shape[0]-1,:,:]
@@ -1050,11 +1051,11 @@ def create_from_images_cellvideos_ratio(tfrecord_dir, image_dir, included_anomal
 	image_filenames = np.concatenate((image_filenames,anomaly_filenames))
 	if len(image_filenames) == 0:
 		error('No input images found')
-		
+
 	img = np.asarray(PIL.Image.open(image_filenames[0]))
 	resolution = img.shape[0]
 	channels = img.shape[2] if img.ndim == 3 else 1
-	
+
 	if img.shape[1] != resolution:
 		error('Input images must have the same width and height')
 	if resolution != 2 ** int(np.floor(np.log2(resolution))):
@@ -1066,7 +1067,7 @@ def create_from_images_cellvideos_ratio(tfrecord_dir, image_dir, included_anomal
 		order = tfr.choose_shuffled_order() if shuffle else np.arange(len(image_filenames))
 		for idx in range(order.size):
 			img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
-			
+
 			#--------
 			if img.shape[0] == 65:
 				img = img[1:img.shape[0]-1,:,:]
@@ -1107,7 +1108,7 @@ def execute_cmdline(argv):
 		prog        = prog,
 		description = 'Tool for creating, extracting, and visualizing Progressive GAN datasets.',
 		epilog      = 'Type "%s <command> -h" for more information.' % prog)
-        
+
 	subparsers = parser.add_subparsers(dest='command')
 	subparsers.required = True
 	def add_command(cmd, desc, example=None):
@@ -1140,18 +1141,18 @@ def execute_cmdline(argv):
 	p.add_argument(     'mnist_dir',        help='Directory containing MNIST')
 	p.add_argument(     'percentage',        help='Desired percentage of anomalies in training set')
 	p.add_argument(     'id',        		help='Id of normal samples')
-	
+
 	p = add_command(    'export_mnist_anomaly_detection_validation_samples',     'Export MNIST validation',
 											'create_mnist datasets/mnist ~/downloads/mnist')
 	p.add_argument(     'destination_dir',     help='New validation data directory to be created')
 	p.add_argument(     'mnist_dir',        help='Directory containing MNIST')
-	
+
 	p = add_command(    'export_mnist_anomaly_detection_training_samples',     'Export MNIST training',
 											'create_mnist datasets/mnist ~/downloads/mnist')
 	p.add_argument(     'destination_dir',     help='New validation data directory to be created')
 	p.add_argument(     'mnist_dir',        help='Directory containing MNIST')
 	p.add_argument(     'percentage',        help='Desired percentage of anomalies in training set')
-	
+
 	p = add_command(    'create_mnistrgb',  'Create dataset for MNIST-RGB.',
 											'create_mnistrgb datasets/mnistrgb ~/downloads/mnist')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
@@ -1163,14 +1164,14 @@ def execute_cmdline(argv):
 											'create_cifar10 datasets/cifar10 ~/downloads/cifar10')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
 	p.add_argument(     'cifar10_dir',      help='Directory containing CIFAR-10')
-	
+
 	p = add_command(    'create_cifar10_anomaly_detection',   'Create dataset for CIFAR-10.',
 											'create_cifar10 datasets/cifar10 ~/downloads/cifar10')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
 	p.add_argument(     'cifar10_dir',      help='Directory containing CIFAR-10')
 	p.add_argument(     'anomaly_class',      help='Class to be excluded as anomaly')
 	p.add_argument(     'percentage',      help='Percentage of anomalies')
-	
+
 
 	p = add_command(    'create_cifar100',  'Create dataset for CIFAR-100.',
 											'create_cifar100 datasets/cifar100 ~/downloads/cifar100')
@@ -1188,14 +1189,14 @@ def execute_cmdline(argv):
 	p.add_argument(     'lmdb_dir',         help='Directory containing LMDB database')
 	p.add_argument(     '--resolution',     help='Output resolution (default: 256)', type=int, default=256)
 	p.add_argument(     '--max_images',     help='Maximum number of images (default: none)', type=int, default=None)
-	
+
 	p = add_command(    'create_lsun_anomaly_detection',      'Create dataset for single LSUN category.',
 											'create_lsun datasets/lsun-car-100k ~/downloads/lsun/car_lmdb --resolution 256 --max_images 100000')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
 	p.add_argument(     'lsun_dir',         help='Directory containing LMDB database')
 	p.add_argument(     '--resolution',     help='Output resolution (default: 256)', type=int, default=256)
 	p.add_argument(     '--max_images',     help='Maximum number of images (default: none)', type=int, default=None)
-	
+
 	p = add_command(    'create_celeba',    'Create dataset for CelebA.',
 											'create_celeba datasets/celeba ~/downloads/celeba')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
@@ -1216,13 +1217,13 @@ def execute_cmdline(argv):
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
 	p.add_argument(     'image_dir',        help='Directory containing the images')
 	p.add_argument(     '--shuffle',        help='Randomize image order (default: 1)', type=int, default=1)
-	
+
 	p = add_command(    'create_from_images_cellvideos', 'Create dataset from a directory full of images.',
 											'create_from_images datasets/mydataset myimagedir')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
 	p.add_argument(     'image_dir',        help='Directory containing the images')
 	p.add_argument(     '--shuffle',        help='Randomize image order (default: 1)', type=int, default=1)
-	
+
 	p = add_command(    'create_from_images_cellvideos_ratio', 'Create dataset from a directory full of images.',
 											'create_from_images datasets/mydataset myimagedir')
 	p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
